@@ -8,6 +8,8 @@
 2. 激活虚拟环境：`.venv\Scripts\Activate.ps1`
 3. 启动游戏：`python main.py`
 
+游戏会在项目根目录保存本地最高分文件 `best_score.json`。
+
 ## 操作说明
 
 - 方向键或 `WASD` 移动方块
