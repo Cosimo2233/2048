@@ -41,6 +41,18 @@ def ease_out_cubic(progress: float) -> float:
     return 1 - pow(1 - progress, 3)
 
 
+def ease_out_back(progress: float) -> float:
+    overshoot = 1.70158
+    shifted = progress - 1
+    return 1 + shifted * shifted * ((overshoot + 1) * shifted + overshoot)
+
+
+def ease_out_elastic(progress: float) -> float:
+    if progress == 0 or progress == 1:
+        return progress
+    return pow(2, -10 * progress) * math.sin((progress * 10 - 0.75) * (2 * math.pi / 3)) + 1
+
+
 def rgb_to_hex(red: int, green: int, blue: int) -> str:
     return f"#{red:02x}{green:02x}{blue:02x}"
 
@@ -411,7 +423,8 @@ class Game2048App(tk.Tk):
             return
 
         total_frames = 10
-        progress = ease_out_cubic(frame / total_frames)
+        linear_progress = frame / total_frames
+        progress = clamp(ease_out_back(linear_progress), 0.0, 1.0)
 
         moving_sources = {
             (move.source_row, move.source_col)
@@ -431,13 +444,14 @@ class Game2048App(tk.Tk):
             end_x1, end_y1, _, _ = self.cell_bounds(move.target_row, move.target_col)
             current_x = start_x1 + (end_x1 - start_x1) * progress
             current_y = start_y1 + (end_y1 - start_y1) * progress
+            settle_scale = 1.0 + 0.04 * math.sin(linear_progress * math.pi)
             overlays.append(
                 {
                     "x": current_x,
                     "y": current_y,
                     "size": self.tile_size,
                     "value": float(move.value),
-                    "scale": 1.0,
+                    "scale": settle_scale,
                 }
             )
 
@@ -456,8 +470,8 @@ class Game2048App(tk.Tk):
             return
 
         total_frames = 7
-        progress = ease_out_cubic(frame / total_frames)
-        scale = 0.55 + 0.45 * progress
+        progress = clamp(frame / total_frames, 0.0, 1.0)
+        scale = clamp(0.22 + 0.88 * ease_out_elastic(progress), 0.18, 1.08)
 
         row, col = self.pending_spawn_cell
         x1, y1, _, _ = self.cell_bounds(row, col)
