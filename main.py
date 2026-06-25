@@ -4,6 +4,7 @@ import json
 import math
 from pathlib import Path
 import tkinter as tk
+from typing import TypedDict
 
 from game_logic import BOARD_SIZE, Game2048, MovePreview
 
@@ -71,6 +72,16 @@ def blend_hex(start_hex: str, end_hex: str, amount: float) -> str:
         blend_channel(start_green, end_green, amount),
         blend_channel(start_blue, end_blue, amount),
     )
+
+
+class FlashTile(TypedDict):
+    row: int
+    col: int
+    scale: float
+    fill: str
+    outline: str
+    outline_width: int
+    radius: float
 
 
 class Game2048App(tk.Tk):
@@ -289,6 +300,27 @@ class Game2048App(tk.Tk):
         y2 = y1 + self.tile_size
         return x1, y1, x2, y2
 
+    def draw_cell_flash(
+        self,
+        row: int,
+        col: int,
+        *,
+        scale: float,
+        fill: str,
+        outline: str,
+        outline_width: int = 2,
+        radius: float = 18,
+    ) -> None:
+        x1, y1, x2, y2 = self.cell_bounds(row, col)
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
+        scaled_size = self.tile_size * scale
+        left = center_x - scaled_size / 2
+        top = center_y - scaled_size / 2
+        right = center_x + scaled_size / 2
+        bottom = center_y + scaled_size / 2
+        self.rounded_tile(left, top, right, bottom, fill=fill, outline=outline, outline_width=outline_width, radius=radius * scale)
+
     def rounded_tile(
         self,
         x1: float,
@@ -368,6 +400,7 @@ class Game2048App(tk.Tk):
     def draw_board(
         self,
         board: list[list[int]],
+        flash_tiles: list[FlashTile] | None = None,
         overlay_tiles: list[dict[str, float]] | None = None,
         ghost_highlight: tuple[int, int] | None = None,
     ) -> None:
@@ -390,6 +423,18 @@ class Game2048App(tk.Tk):
                         fill=text_color,
                         font=("Segoe UI", font_size, "bold"),
                     )
+
+        if flash_tiles:
+            for tile in flash_tiles:
+                self.draw_cell_flash(
+                    tile["row"],
+                    tile["col"],
+                    scale=tile["scale"],
+                    fill=tile["fill"],
+                    outline=tile["outline"],
+                    outline_width=tile["outline_width"],
+                    radius=tile["radius"],
+                )
 
         if ghost_highlight is not None:
             row, col = ghost_highlight
@@ -422,7 +467,7 @@ class Game2048App(tk.Tk):
             self.finish_animation()
             return
 
-        total_frames = 10
+        total_frames = 11
         linear_progress = frame / total_frames
         progress = clamp(ease_out_back(linear_progress), 0.0, 1.0)
 
@@ -436,15 +481,40 @@ class Game2048App(tk.Tk):
         for row, col in moving_sources:
             masked_board[row][col] = 0
 
+        merged_targets = {
+            (move.target_row, move.target_col)
+            for move in self.pending_preview.tile_moves
+            if move.merged
+        }
+
+        flash_tiles: list[FlashTile] = [
+            {
+                "row": row,
+                "col": col,
+                "scale": 0.95 + 0.14 * math.sin(linear_progress * math.pi),
+                "fill": "#fff1b8",
+                "outline": "#f5d46d",
+                "outline_width": 2,
+                "radius": 20,
+            }
+            for row, col in merged_targets
+        ]
+
         overlays: list[dict[str, float]] = []
         for move in self.pending_preview.tile_moves:
             if (move.source_row, move.source_col) == (move.target_row, move.target_col):
                 continue
             start_x1, start_y1, _, _ = self.cell_bounds(move.source_row, move.source_col)
             end_x1, end_y1, _, _ = self.cell_bounds(move.target_row, move.target_col)
-            current_x = start_x1 + (end_x1 - start_x1) * progress
-            current_y = start_y1 + (end_y1 - start_y1) * progress
-            settle_scale = 1.0 + 0.04 * math.sin(linear_progress * math.pi)
+            travel_distance = abs(move.source_row - move.target_row) + abs(move.source_col - move.target_col)
+            start_delay = 0.018 * max(0, travel_distance - 1)
+            tile_progress = clamp((linear_progress - start_delay) / max(0.001, 1 - start_delay), 0.0, 1.0)
+            tile_progress = clamp(ease_out_back(tile_progress), 0.0, 1.0)
+            current_x = start_x1 + (end_x1 - start_x1) * tile_progress
+            current_y = start_y1 + (end_y1 - start_y1) * tile_progress
+            settle_scale = 1.0 + 0.03 * math.sin(linear_progress * math.pi)
+            if move.merged:
+                settle_scale += 0.08 * math.sin(linear_progress * math.pi)
             overlays.append(
                 {
                     "x": current_x,
@@ -455,7 +525,7 @@ class Game2048App(tk.Tk):
                 }
             )
 
-        self.draw_board(masked_board, overlays)
+        self.draw_board(masked_board, flash_tiles=flash_tiles, overlay_tiles=overlays)
 
         if frame < total_frames:
             job_id = self.after(16, lambda: self.animate_move_frame(frame + 1))
@@ -469,12 +539,23 @@ class Game2048App(tk.Tk):
             self.finish_animation()
             return
 
-        total_frames = 7
+        total_frames = 8
         progress = clamp(frame / total_frames, 0.0, 1.0)
-        scale = clamp(0.22 + 0.88 * ease_out_elastic(progress), 0.18, 1.08)
+        scale = clamp(0.18 + 0.92 * ease_out_elastic(progress), 0.16, 1.1)
 
         row, col = self.pending_spawn_cell
         x1, y1, _, _ = self.cell_bounds(row, col)
+        flash_tiles: list[FlashTile] = [
+            {
+                "row": row,
+                "col": col,
+                "scale": 0.9 + 0.12 * ease_out_back(progress),
+                "fill": "#fff4ca",
+                "outline": "#f0ce64",
+                "outline_width": 2,
+                "radius": 19,
+            }
+        ]
         overlays = [
             {
                 "x": x1,
@@ -484,7 +565,7 @@ class Game2048App(tk.Tk):
                 "scale": scale,
             }
         ]
-        self.draw_board(self.game.board, overlays, ghost_highlight=self.pending_spawn_cell)
+        self.draw_board(self.game.board, flash_tiles=flash_tiles, overlay_tiles=overlays, ghost_highlight=self.pending_spawn_cell)
 
         if frame < total_frames:
             job_id = self.after(16, lambda: self.animate_spawn_frame(frame + 1))
