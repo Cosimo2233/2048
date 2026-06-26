@@ -1,0 +1,8 @@
+# Windows 版依赖
+Pillow>=10.0
+PyInstaller>=6.0
+
+# 安卓版依赖（仅在 Linux/WSL 构建时需要）
+# Kivy>=2.2.0
+# buildozer>=1.5
+# Cython>=3.0
