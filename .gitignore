@@ -2,3 +2,36 @@
 __pycache__/
 *.pyc
 best_score.json
+
+# Build artifacts
+dist/
+build/
+*.spec
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python packaging
+*.egg-info/
+*.egg
+.eggs/
+
+# Testing / Linting
+.pytest_cache/
+.mypy_cache/
+.tox/
+htmlcov/
+.coverage
+
+# Temp
+*.log
+*.tmp
+*.bak

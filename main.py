@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import io
 import json
 import math
+import struct
+import sys
+import wave
 from pathlib import Path
 import tkinter as tk
+import winsound
 from typing import TypedDict
 
 from game_logic import BOARD_SIZE, Game2048, MovePreview
 
 
-ROOT_DIR = Path(__file__).resolve().parent
+ROOT_DIR = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
 BEST_SCORE_FILE = ROOT_DIR / "best_score.json"
 
 TILE_COLORS = {
@@ -84,6 +89,40 @@ class FlashTile(TypedDict):
     radius: float
 
 
+class SoundManager:
+    def __init__(self) -> None:
+        self._merge_sound = self._generate_merge_sound()
+
+    @staticmethod
+    def _generate_merge_sound() -> bytes:
+        sample_rate = 44100
+        duration = 0.12
+        total_samples = int(sample_rate * duration)
+        frequencies = [523.25, 659.25, 783.99]
+        samples: list[float] = []
+
+        for i in range(total_samples):
+            t = i / sample_rate
+            envelope = math.exp(-t * 18)
+            value = sum(math.sin(2.0 * math.pi * f * t) for f in frequencies) * envelope * 0.25
+            samples.append(value)
+
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sample_rate)
+            wf.writeframes(b"".join(struct.pack("<h", int(s * 32767)) for s in samples))
+        buffer.seek(0)
+        return buffer.getvalue()
+
+    def play_merge(self) -> None:
+        try:
+            winsound.PlaySound(self._merge_sound, winsound.SND_MEMORY | winsound.SND_ASYNC)
+        except RuntimeError:
+            pass
+
+
 class Game2048App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -92,6 +131,7 @@ class Game2048App(tk.Tk):
         self.resizable(False, False)
 
         self.game = Game2048()
+        self.sound = SoundManager()
         self.best_score = self.load_best_score()
         self.animation_running = False
         self.animation_jobs: list[str] = []
@@ -267,6 +307,8 @@ class Game2048App(tk.Tk):
         self.game.move(direction)
         self.pending_spawn_cell, self.pending_spawn_value = self.detect_spawn_tile(preview.board, self.game.board)
         self.update_best_score()
+        if any(move.merged for move in preview.tile_moves):
+            self.sound.play_merge()
         self.animate_move_frame(0)
 
     def detect_spawn_tile(self, before_board: list[list[int]], after_board: list[list[int]]) -> tuple[tuple[int, int] | None, int | None]:
